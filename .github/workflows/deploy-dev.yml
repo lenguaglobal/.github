@@ -101,5 +101,6 @@ jobs:
               --base main \
               --head "$BRANCH" \
               --title "deploy(dev): ${APP_NAME} ${IMAGE_TAG}" \
-              --body "Automated deploy triggered by [${APP_NAME}@${IMAGE_TAG}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})"
+              --body "Automated deploy triggered by [${APP_NAME}@${IMAGE_TAG}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})" \
+              --label automerge
           fi
