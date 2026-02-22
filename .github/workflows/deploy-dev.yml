@@ -75,7 +75,8 @@ jobs:
           INFRA_REPO="lenguaglobal/lengua-infra"
           TFVARS_PATH="environments/dev/images.tfvars"
           BRANCH="deploy/dev/${APP_NAME}-${IMAGE_TAG}"
-          TFVARS_KEY="${APP_NAME//-/_}_image_tag"
+          STRIPPED="${APP_NAME#lengua-}"
+          TFVARS_KEY="${STRIPPED//-/_}_image_tag"
 
           # Clone infra repo
           git clone "https://x-access-token:${GH_TOKEN}@github.com/${INFRA_REPO}.git" infra
