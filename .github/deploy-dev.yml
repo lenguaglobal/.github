@@ -23,7 +23,7 @@ permissions:
 jobs:
   build-and-deploy:
     name: Build, Push, Deploy
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -38,17 +38,25 @@ jobs:
         id: ecr
         uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
       - name: Build and push Docker image
-        env:
-          REGISTRY: ${{ steps.ecr.outputs.registry }}
-          REPO: ${{ inputs.ecr_repo || github.event.repository.name }}
-          TAG: ${{ github.sha }}
-        run: |
-          SHORT_SHA="${TAG:0:7}"
-          docker build -f ${{ inputs.dockerfile }} -t "$REGISTRY/$REPO:$SHORT_SHA" .
-          docker push "$REGISTRY/$REPO:$SHORT_SHA"
-          echo "image_tag=$SHORT_SHA" >> "$GITHUB_OUTPUT"
         id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: ${{ inputs.dockerfile }}
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/${{ inputs.ecr_repo || github.event.repository.name }}:sha-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Set image tag output
+        id: tag
+        run: echo "image_tag=sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Generate GitHub App token
         id: app-token
@@ -61,7 +69,7 @@ jobs:
       - name: Open deploy PR on infra repo
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          IMAGE_TAG: ${{ steps.build.outputs.image_tag }}
+          IMAGE_TAG: ${{ steps.tag.outputs.image_tag }}
           APP_NAME: ${{ inputs.ecr_repo || github.event.repository.name }}
         run: |
           INFRA_REPO="lenguaglobal/lengua-infra"
