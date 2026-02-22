@@ -62,9 +62,9 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
         with:
-          app-id: 2889724
+          app-id: ${{ vars.GH_APP_ID }}
           private-key: ${{ secrets.GH_APP_PEM_FILE }}
-          owner: lenguaglobal
+          owner: ${{ github.repository_owner }}
 
       - name: Open deploy PR on infra repo
         env:
