@@ -91,13 +91,16 @@ jobs:
           git config user.email "lenguaglobal-terraform[bot]@users.noreply.github.com"
           git add "$TFVARS_PATH"
           git commit -m "deploy(dev): ${APP_NAME} ${IMAGE_TAG}"
-          git push origin "$BRANCH"
+          git push --force origin "$BRANCH"
 
-          # Create PR with automerge label
-          gh pr create \
-            --repo "$INFRA_REPO" \
-            --base main \
-            --head "$BRANCH" \
-            --title "deploy(dev): ${APP_NAME} ${IMAGE_TAG}" \
-            --body "Automated deploy triggered by [${APP_NAME}@${IMAGE_TAG}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})" \
-            --label automerge
+          # Create PR if one doesn't already exist
+          EXISTING=$(gh pr list --repo "$INFRA_REPO" --head "$BRANCH" --json number --jq '.[0].number')
+          if [ -z "$EXISTING" ]; then
+            gh pr create \
+              --repo "$INFRA_REPO" \
+              --base main \
+              --head "$BRANCH" \
+              --title "deploy(dev): ${APP_NAME} ${IMAGE_TAG}" \
+              --body "Automated deploy triggered by [${APP_NAME}@${IMAGE_TAG}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})" \
+              --label automerge
+          fi
