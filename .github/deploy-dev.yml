@@ -1,0 +1,94 @@
+name: Deploy to Dev
+
+on:
+  workflow_call:
+    inputs:
+      ecr_repo:
+        description: "ECR repository name (defaults to calling repo name)"
+        required: false
+        type: string
+      dockerfile:
+        description: "Path to Dockerfile"
+        required: false
+        type: string
+        default: "./Dockerfile"
+    secrets:
+      GH_APP_PEM_FILE:
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build-and-deploy:
+    name: Build, Push, Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@ff717079ee2060e4bcee96c4779b553acc87447c # v4
+        with:
+          role-to-assume: ${{ vars.ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076 # v2
+
+      - name: Build and push Docker image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          REPO: ${{ inputs.ecr_repo || github.event.repository.name }}
+          TAG: ${{ github.sha }}
+        run: |
+          SHORT_SHA="${TAG:0:7}"
+          docker build -f ${{ inputs.dockerfile }} -t "$REGISTRY/$REPO:$SHORT_SHA" .
+          docker push "$REGISTRY/$REPO:$SHORT_SHA"
+          echo "image_tag=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+        id: build
+
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1
+        with:
+          app-id: 2889724
+          private-key: ${{ secrets.GH_APP_PEM_FILE }}
+          owner: lenguaglobal
+
+      - name: Open deploy PR on infra repo
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          IMAGE_TAG: ${{ steps.build.outputs.image_tag }}
+          APP_NAME: ${{ inputs.ecr_repo || github.event.repository.name }}
+        run: |
+          INFRA_REPO="lenguaglobal/lengua-infra"
+          TFVARS_PATH="environments/dev/images.tfvars"
+          BRANCH="deploy/dev/${APP_NAME}-${IMAGE_TAG}"
+          TFVARS_KEY="${APP_NAME//-/_}_image_tag"
+
+          # Clone infra repo
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${INFRA_REPO}.git" infra
+          cd infra
+
+          # Create branch and update image tag
+          git checkout -b "$BRANCH"
+          sed -i "s/${TFVARS_KEY} *= *\".*\"/${TFVARS_KEY} = \"${IMAGE_TAG}\"/" "$TFVARS_PATH"
+
+          # Commit and push
+          git config user.name "lenguaglobal-terraform[bot]"
+          git config user.email "lenguaglobal-terraform[bot]@users.noreply.github.com"
+          git add "$TFVARS_PATH"
+          git commit -m "deploy(dev): ${APP_NAME} ${IMAGE_TAG}"
+          git push origin "$BRANCH"
+
+          # Create PR with automerge label
+          gh pr create \
+            --repo "$INFRA_REPO" \
+            --base main \
+            --head "$BRANCH" \
+            --title "deploy(dev): ${APP_NAME} ${IMAGE_TAG}" \
+            --body "Automated deploy triggered by [${APP_NAME}@${IMAGE_TAG}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})" \
+            --label automerge
